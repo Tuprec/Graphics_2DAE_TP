@@ -1,0 +1,4 @@
+include(windows-gcc)
+
+[settings]
+build_type=Release

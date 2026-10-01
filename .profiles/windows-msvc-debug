@@ -1,0 +1,7 @@
+include(windows-msvc)
+
+[settings]
+build_type=Debug
+
+[conf]
+#tools.build:cxxflags=["/fsanitize=address"]
