@@ -30,6 +30,8 @@ void SoftwarePathTracer::Render()
 	const SurfaceInfo& surface_info = context_->surface_info;
 	const float aspect_ratio{ surface_info.width / static_cast<float> (surface_info.height) };
 
+
+	////Week1
 	////EX2
 	//const Sphere test_sphere{ Vector3{ 0.f,0.f,100.f },50.f };
 	//const float fov{ 1 };
@@ -49,13 +51,14 @@ void SoftwarePathTracer::Render()
 		for (uint32_t px = 0; px < surface_info.width; ++px)
 		{
 			////Week1
-			//Ex1(surface_info, px, py, aspect_ratio, fov);
-			//Ex2(surface_info, px, py, aspect_ratio, fov, test_sphere);
-			//Ex3(surface_info, px, py, aspect_ratio, fov, test_plane_inf);
-			//Ex3(surface_info, px, py, aspect_ratio, fov, test_plane_finite);
-			//Ex4(surface_info, pScene, px, py, aspect_ratio, fov);
+			//W1Ex1(surface_info, px, py, aspect_ratio, fov);
+			//W1Ex2(surface_info, px, py, aspect_ratio, fov, test_sphere);
+			//W1Ex3(surface_info, px, py, aspect_ratio, fov, test_plane_inf);
+			//W1Ex3(surface_info, px, py, aspect_ratio, fov, test_plane_finite);
+			//W1Ex4(surface_info, pScene, px, py, aspect_ratio, fov);
 
 			//Week2
+			W2Ex4(surface_info, pScene, px, py, aspect_ratio, fov);
 
 
 		}
@@ -112,7 +115,7 @@ ShadingInput gfx::SoftwarePathTracer::ConstructShadingInput(const Scene* scene, 
 	return input;
 }
 
-void gfx::SoftwarePathTracer::Ex1(const SurfaceInfo& surface_info, uint32_t px, uint32_t py, float aspect_ratio, float fov) const
+void gfx::SoftwarePathTracer::W1Ex1(const SurfaceInfo& surface_info, uint32_t px, uint32_t py, float aspect_ratio, float fov) const
 {
 	Vector3 ray_direction{ 2 * (px + 0.5f) / surface_info.width - 1,1 - 2 * (py + 0.5f) / surface_info.height,1.f };
 	ray_direction.x *= aspect_ratio * fov;
@@ -131,7 +134,7 @@ void gfx::SoftwarePathTracer::Ex1(const SurfaceInfo& surface_info, uint32_t px, 
 		static_cast<uint8_t>(final_color.b * 255));
 }
 
-void gfx::SoftwarePathTracer::Ex2(const SurfaceInfo& surface_info, uint32_t px, uint32_t py, float aspect_ratio, float fov, const Sphere& test_sphere, const Vector3& camera_origin) const
+void gfx::SoftwarePathTracer::W1Ex2(const SurfaceInfo& surface_info, uint32_t px, uint32_t py, float aspect_ratio, float fov, const Sphere& test_sphere, const Vector3& camera_origin) const
 {
 	Vector3 ray_direction{ 2 * (px + 0.5f) / surface_info.width - 1,1 - 2 * (py + 0.5f) / surface_info.height,1.f };
 	ray_direction.x *= aspect_ratio * fov;
@@ -178,7 +181,7 @@ void gfx::SoftwarePathTracer::Ex2(const SurfaceInfo& surface_info, uint32_t px, 
 		static_cast<uint8_t>(final_color.b * 255));
 }
 
-void gfx::SoftwarePathTracer::Ex3(const SurfaceInfo& surface_info, uint32_t px, uint32_t py, float aspect_ratio, float fov, const Plane& test_plane, const Vector3& camera_origin) const
+void gfx::SoftwarePathTracer::W1Ex3(const SurfaceInfo& surface_info, uint32_t px, uint32_t py, float aspect_ratio, float fov, const Plane& test_plane, const Vector3& camera_origin) const
 {
 	Vector3 ray_direction{ 2 * (px + 0.5f) / surface_info.width - 1,1 - 2 * (py + 0.5f) / surface_info.height,1.f };
 	ray_direction.x *= aspect_ratio * fov;
@@ -224,7 +227,60 @@ void gfx::SoftwarePathTracer::Ex3(const SurfaceInfo& surface_info, uint32_t px, 
 		static_cast<uint8_t>(final_color.b * 255));
 }
 
-void gfx::SoftwarePathTracer::Ex4(const SurfaceInfo& surface_info, const Scene* pScene, uint32_t px, uint32_t py, float aspect_ratio, float fov)
+void gfx::SoftwarePathTracer::W1Ex4(const SurfaceInfo& surface_info, const Scene* pScene, uint32_t px, uint32_t py, float aspect_ratio, float fov)
+{
+	RayHitRecord closest_hit_record{};
+	ShadingInput shading_input{};
+	Vector3 ray_direction{ 2 * (px + 0.5f) / surface_info.width - 1,1 - 2 * (py + 0.5f) / surface_info.height,1.f };
+	ray_direction.x *= aspect_ratio * fov;
+	ray_direction.y *= fov;
+	ray_direction.Normalize();
+
+	const Ray view_ray{ pScene->camera.GetPosition(), ray_direction };
+
+	bool did_hit{ SceneClosestHitTest(pScene,view_ray,closest_hit_record) };
+
+	ColorRgba final_color{};
+	if (did_hit)
+	{
+		shading_input = ConstructShadingInput(pScene, closest_hit_record);
+
+		const VisualizationMode& visual_mode{ context_->debug_params.visualization_mode };
+		if (visual_mode == VisualizationMode::kDepth)
+		{
+			const float max_depth{ 100.f };
+			const float scaled_t{ 1.f - std::clamp(closest_hit_record.t / max_depth,0.f,1.f) };
+			final_color = ColorRgba{ scaled_t, scaled_t, scaled_t };
+		}
+		else if (visual_mode == VisualizationMode::kNone)
+		{
+			const uint32_t idx{ closest_hit_record.object_index };
+			final_color = {
+				static_cast<float>(idx & 1),
+				static_cast<float>((idx >> 1) & 1),
+				static_cast<float>((idx >> 2) & 1)
+			};
+		}
+		else if (visual_mode == VisualizationMode::kNormals)
+		{
+			const Vector3& n{ shading_input.world_normal };
+			final_color = ColorRgba{ (n.x + 1.f) * 0.5f, (n.y + 1.f) * 0.5f, (n.z + 1.f) * 0.5f };
+		}
+		final_color.MaxToOne();
+	}
+	else
+	{
+		final_color = pScene->background_color;
+	}
+	// Write to surface	
+	surface_info.pixel_buffer[px + (py * surface_info.width)] = SDL_MapRGB(
+		surface_info.pixel_format_details, nullptr,
+		static_cast<uint8_t>(final_color.r * 255),
+		static_cast<uint8_t>(final_color.g * 255),
+		static_cast<uint8_t>(final_color.b * 255));
+}
+
+void gfx::SoftwarePathTracer::W2Ex1(const SurfaceInfo& surface_info, const Scene* pScene, uint32_t px, uint32_t py, float aspect_ratio, float fov)
 {
 	RayHitRecord closest_hit_record{};
 	ShadingInput shading_input{};
