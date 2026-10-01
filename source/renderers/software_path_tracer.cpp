@@ -33,17 +33,17 @@ void SoftwarePathTracer::Render()
 
 	////Week1
 	////EX2
-	const Sphere test_sphere{ Vector3{ 0.f,0.f,100.f },50.f }; // => simple test sphere(center coords,radius)
-	const float fov{ 1 }; // ==> currently 1 because not needed for the exercise
+	//const Sphere test_sphere{ Vector3{ 0.f,0.f,100.f },50.f }; // => simple test sphere(center coords,radius)
+	//const float fov{ 1 }; // ==> currently 1 because not needed for the exercise
 	////EX3 
 	//const Plane test_plane_inf{ Vector3{ 0.f,-50.f,0.f } ,Vector3{ 0.f,1.f,0.f } }; // => infinite plane(origin, normal) 
 	//const Plane test_plane_finite{ Vector3{ 0.f,-50.f,0.f } ,Vector3{ 0.f,1.f,0.f }, true,Vector2{100.f,100.f} };// => finite plane(origin, normal, is_double_sided, bounds) 
 	//const float fov{ 1 };//==> currently 1 because not needed for the exercise
 
 	////EX4 and up
-	//const float fov_in_radiants{ context_->scene_manager->GetActiveScene()->camera.GetFovAngle() / 180.f * static_cast<float>(std::numbers::pi) }; // => calculating the fov angle from degres to radians because the camera.GetFovAngle() returns the angle in degrees
-	//const float fov{ tanf(fov_in_radiants / 2.f) };// => calculating FOV(Field Of View)
-	//const Scene* pScene{ context_->scene_manager->GetActiveScene() };// => retreving the pointer of te active scene
+	const float fov_in_radiants{ context_->scene_manager->GetActiveScene()->camera.GetFovAngle() / 180.f * static_cast<float>(std::numbers::pi) }; // => calculating the fov angle from degres to radians because the camera.GetFovAngle() returns the angle in degrees
+	const float fov{ tanf(fov_in_radiants / 2.f) };// => calculating FOV(Field Of View)
+	const Scene* pScene{ context_->scene_manager->GetActiveScene() };// => retreving the pointer of te active scene
 
 	//Dubbel for loop to loop over every pixel on screen
 	for (uint32_t py = 0; py < surface_info.height; ++py)
@@ -52,10 +52,10 @@ void SoftwarePathTracer::Render()
 		{
 			////Week1
 			//W1Ex1(surface_info, px, py, aspect_ratio, fov);
-			W1Ex2(surface_info, px, py, aspect_ratio, fov, test_sphere);
+			//W1Ex2(surface_info, px, py, aspect_ratio, fov, test_sphere);
 			//W1Ex3(surface_info, px, py, aspect_ratio, fov, test_plane_inf);
 			//W1Ex3(surface_info, px, py, aspect_ratio, fov, test_plane_finite);
-			//W1Ex4(surface_info, pScene, px, py, aspect_ratio, fov);
+			W1Ex4(surface_info, pScene, px, py, aspect_ratio, fov);
 
 			//Week2
 			//W2Ex1(surface_info, pScene, px, py, aspect_ratio, fov);
@@ -317,7 +317,7 @@ void gfx::SoftwarePathTracer::W2Ex1(const SurfaceInfo& surface_info, const Scene
 
 	bool did_hit{ SceneClosestHitTest(pScene,view_ray,closest_hit_record) }; //Checking if there was a hit
 
-	ColorRgba final_color{};//final color of a pixel
+	ColorRgba final_color{};//=>Final color of a pixel
 	if (did_hit)
 	{
 		shading_input = ConstructShadingInput(pScene, closest_hit_record);//Calculate the shading input
