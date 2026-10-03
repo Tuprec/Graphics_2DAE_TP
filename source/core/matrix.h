@@ -75,6 +75,13 @@ namespace gfx
 		static Matrix Transpose(const Matrix& m);
 		static Matrix Inverse(const Matrix& m);
 
+		/// <summary>
+		/// This function calculates and returns an ONB matrix(orthonormal basis )
+		/// </summary>
+		/// <param name="origin">This is te origin not the position from te matrix</param>
+		/// <param name="forward">This is the forward</param>
+		/// <param name="up">This is the local up</param>
+		/// <returns>A 4x4 matrix (The ONB matrix)</returns>
 		static Matrix CreateLookAtLH(const Vector3& origin, const Vector3& forward, const Vector3& up);
 		static Matrix CreatePerspectiveFovLH(const float fov_y, const float aspect, const float zn, const float zf);
 

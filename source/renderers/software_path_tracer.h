@@ -39,7 +39,8 @@ namespace gfx
 		void W1Ex4(const SurfaceInfo& surface_info, const Scene* pScene,  uint32_t px, uint32_t py, float aspect_ratio, float fov);
 		
 		
-		void W2Ex1(const SurfaceInfo& surface_info, const Scene* pScene,  uint32_t px, uint32_t py, float aspect_ratio, float fov);
+		void W2Ex1(const SurfaceInfo& surface_info,  Scene* pScene,  uint32_t px, uint32_t py, float aspect_ratio, float fov);
+		void W2Ex2(const SurfaceInfo& surface_info,  Scene* pScene,  uint32_t px, uint32_t py, float aspect_ratio, float fov);
 	};
 }
 #endif //SOFTWARE_PATH_TRACER_HEADER

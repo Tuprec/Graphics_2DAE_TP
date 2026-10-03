@@ -19,7 +19,8 @@ using namespace gfx;
 Matrix::Matrix(const Vector3& x_axis, const Vector3& y_axis, const Vector3& z_axis, const Vector3& t) :
 	Matrix({ x_axis.x, x_axis.y, x_axis.z, 0 }, { y_axis.x, y_axis.y, y_axis.z, 0 },
 		{ z_axis.x, z_axis.y, z_axis.z, 0 }, { t.x, t.y, t.z, 1 })
-{}
+{
+}
 
 Matrix::Matrix(const Vector4& x_axis, const Vector4& y_axis, const Vector4& z_axis, const Vector4& t)
 {
@@ -338,10 +339,15 @@ Matrix Matrix::Inverse(const Matrix& m)
 
 Matrix Matrix::CreateLookAtLH(const Vector3& origin, const Vector3& forward, const Vector3& up)
 {
-	//TODO
-	assert(false && "Not Implemented");
-	(void)origin; (void)forward; (void)up;
-	return {};
+	const Vector3 right{ Vector3::Cross(up,forward).Normalized() };
+	const Vector3 postion{ Vector3::Dot(origin,Vector3::UnitX()),Vector3::Dot(origin,Vector3::UnitY()) ,Vector3::Dot(origin,Vector3::UnitZ()) };
+	return {
+		right.ToVector4(),//{x,y,z,0}
+		up.ToVector4(),//{x,y,z,0}
+		forward.ToVector4(),//{x,y,z,0}
+		postion.ToPoint4()//{x,y,z,1}
+	};
+
 }
 
 Matrix Matrix::CreatePerspectiveFovLH(const float fov_y, const float aspect, const float zn, const float zf)
@@ -467,12 +473,12 @@ Matrix Matrix::CreateRotationAxis(const Vector3& axis, const float angle, const 
 	const float x{ normalized_axis.x };
 	const float y{ normalized_axis.y };
 	const float z{ normalized_axis.z };
-	
+
 	return Matrix{
 		{cos_angle + x * x * one_minus_cos, x * y * one_minus_cos - z * sin_angle, x * z * one_minus_cos + y * sin_angle, 0},
 		{y * x * one_minus_cos + z * sin_angle, cos_angle + y * y * one_minus_cos, y * z * one_minus_cos - x * sin_angle, 0},
 		{z * x * one_minus_cos - y * sin_angle, z * y * one_minus_cos + x * sin_angle, cos_angle + z * z * one_minus_cos, 0},
-		{0, 0, 0, 1}};
+		{0, 0, 0, 1} };
 }
 
 Matrix Matrix::CreateScale(float sx, float sy, float sz)
