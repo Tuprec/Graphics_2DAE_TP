@@ -51,7 +51,9 @@ namespace gfx
 	//--- Debug Parameters ---
 	struct DebugParams final
 	{
-		VisualizationMode visualization_mode{ VisualizationMode::kNone };
+		//VisualizationMode visualization_mode{ VisualizationMode::kNone };
+		VisualizationMode visualization_mode{ VisualizationMode::kNormals };
+		//VisualizationMode visualization_mode{ VisualizationMode::kDepth };
 		SamplingStrategy sampling_strategy{ SamplingStrategy::kGGX };
 		ToneMapOperator tone_map_operator{ ToneMapOperator::kACESHill };
 		FilterMode filter_mode{ FilterMode::kPoint };

@@ -58,7 +58,8 @@ void SoftwarePathTracer::Render()
 			//W1Ex4(surface_info, pScene, px, py, aspect_ratio, fov);
 
 			//Week2
-			W2Ex1(surface_info, pScene, px, py, aspect_ratio, fov);
+			//W2Ex1(surface_info, pScene, px, py, aspect_ratio, fov);
+			W2Ex2(surface_info, pScene, px, py, aspect_ratio, fov);
 
 
 		}
@@ -97,15 +98,49 @@ bool gfx::SoftwarePathTracer::SceneClosestHitTest(const Scene* scene, const Ray&
 		}
 		else if (type == PrimitiveType::kTriangle)
 		{
-			const Triangle triangle{ *prim->CloneAs<Triangle>()};
-			hit = HitTestTriangle(triangle, transformed_ray, closest_hit,ignore_hit_record);
+			const Triangle triangle{ *prim->CloneAs<Triangle>() };
+			hit = HitTestTriangle(triangle, transformed_ray, closest_hit, ignore_hit_record);
+		}
+		else if (type == PrimitiveType::kTriangleMesh)
+		{
+			const TriangleMesh triangle_mesh{ *prim->CloneAs<TriangleMesh>() };
+			for (size_t indece{ 0 }; indece < triangle_mesh.indices.size(); indece += 3)
+			{
+				Triangle triangle{};
+				triangle.cull_mode = triangle_mesh.cull_mode;
+
+				//Indixes of the vertex
+				const uint32_t i0{ triangle_mesh.indices[indece] };
+				const uint32_t i1{ triangle_mesh.indices[indece + 1] };
+				const uint32_t i2{ triangle_mesh.indices[indece + 2] };
+
+
+				triangle.v0 = triangle_mesh.vertices[i0].position;
+				triangle.v1 = triangle_mesh.vertices[i1].position;
+				triangle.v2 = triangle_mesh.vertices[i2].position;
+
+
+				triangle.normal = Vector3::Cross((triangle.v1 - triangle.v0), (triangle.v2 - triangle.v0)).Normalized();
+
+				hit = HitTestTriangle(triangle, transformed_ray, closest_hit, ignore_hit_record);
+				if (hit && !ignore_hit_record)
+				{
+					//closest_hit.vertex_indices = { triangle_mesh.indices[indece] ,triangle_mesh.indices[indece + 1], triangle_mesh.indices[indece + 2] };
+					closest_hit.vertex_indices = { i0,i1,i2 };
+					closest_hit.object_index = idx;
+					has_hit = true;
+				}
+			}
 		}
 
 		//if the ray hits save the primitive_index could be a problem in the futher and it needs to be changed to an incremented value of this loop
 		//Note: The index had to change because the instances uses the same primitive index
 		if (hit)
 		{
-			closest_hit.object_index = idx;
+			if (!ignore_hit_record)
+			{
+				closest_hit.object_index = idx;
+			}
 			has_hit = true;//Setting the main return variable to true because there was a hit.
 		}
 		++idx;
@@ -121,8 +156,7 @@ ShadingInput gfx::SoftwarePathTracer::ConstructShadingInput(const Scene* scene, 
 
 	ShadingInput input{};
 	//No clue about this but it should be explained in week 4 and gets inverted
-	input.view_direction = hit.ray.direction - hit.ray.origin;
-	input.view_direction.Normalize();
+	input.view_direction = (hit.ray.origin - p).Normalized();
 
 	if (object.instance_transformation.has_value())
 	{
@@ -140,12 +174,42 @@ ShadingInput gfx::SoftwarePathTracer::ConstructShadingInput(const Scene* scene, 
 	else if (type == PrimitiveType::kSphere)
 	{
 		//Note: Had to use the local space point to calculate the normal
-		input.world_normal = (p- scene->primitives_factory.Get(object.primitive_index)->CloneAs<Sphere>()->origin).Normalized();//normal between the hitpoint and the center of the sphere
+		input.world_normal = (p - scene->primitives_factory.Get(object.primitive_index)->CloneAs<Sphere>()->origin).Normalized();//normal between the hitpoint and the center of the sphere
 	}
 	else if (type == PrimitiveType::kTriangle)
 	{
 		input.world_normal = scene->primitives_factory.Get(object.primitive_index)->CloneAs<Triangle>()->normal.Normalized(); //Normal of the triangle that got hit
 	}
+	else if (type == PrimitiveType::kTriangleMesh && hit.vertex_indices.has_value())
+	{
+		const TriangleMesh mesh{ *scene->primitives_factory.Get(object.primitive_index)->CloneAs<TriangleMesh>() };
+
+		//The normals of the vertices
+		const Vector3 n0{ mesh.vertices[hit.vertex_indices->at(0)].normal.value() };
+		const Vector3 n1{ mesh.vertices[hit.vertex_indices->at(1)].normal.value() };
+		const Vector3 n2{ mesh.vertices[hit.vertex_indices->at(2)].normal.value() };
+
+		Vector2 u_and_v = hit.barycentric_coordinates.value();
+		const float w{ 1 - u_and_v.x - u_and_v.y }; // calc w = 1-u-v;
+
+		input.world_normal = (n0 * w + n1 * u_and_v.x + n2 * u_and_v.y).Normalized(); // Smooth shading
+
+		//input.world_normal = (n0).Normalized(); // This is the normal used by the screenshot
+
+
+		//Used to calculate the triangle normal 
+		//const Vector3 v0 = mesh.vertices[hit.vertex_indices->at(0)].position;
+		//const Vector3 v1 = mesh.vertices[hit.vertex_indices->at(1)].position;
+		//const Vector3 v2 = mesh.vertices[hit.vertex_indices->at(2)].position;
+		//input.world_normal = Vector3::Cross(v1 - v0, v2 - v0).Normalized(); //=> this is the normal of the triangle
+
+	}
+
+	if (object.instance_transformation.has_value())
+	{
+		input.world_normal = object.instance_transformation->TransformNormal(input.world_normal).Normalized();
+	}
+
 	return input;
 }
 
@@ -360,7 +424,7 @@ void gfx::SoftwarePathTracer::W2Ex1(const SurfaceInfo& surface_info, Scene* pSce
 			const float scaled_t{ 1.f - std::clamp(closest_hit_record.t / max_depth,0.f,1.f) };
 			final_color = ColorRgba{ scaled_t, scaled_t, scaled_t };
 		}
-		else if (visual_mode == VisualizationMode::kNone)
+		else if (visual_mode == VisualizationMode::kNone || visual_mode == VisualizationMode::kAlbedo)
 		{
 			//Bit shift based onn the object index
 			const uint32_t idx{ closest_hit_record.object_index };

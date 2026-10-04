@@ -71,16 +71,17 @@ namespace gfx
 	{
 		const float denominator = Vector3::Dot(ray.direction, plane.normal);
 		//Check for 0 devision
-		if (denominator == 0)
+		if (abs(denominator) < FLT_EPSILON)
 			return false;
 
 		const float t = Vector3::Dot(plane.origin - ray.origin, plane.normal) / denominator;
 
 		//Check if t is withing the ray bounds
-		if (t < ray.min || t > ray.max)
+		if (t <= ray.min || t >= ray.max)
 		{
 			return false;
 		}
+
 
 		//Check to see if plane is finite
 		if (plane.half_extent.has_value())
@@ -91,10 +92,10 @@ namespace gfx
 			const Vector3 p = ray.origin + t * ray.direction;// => This is the hit point
 			const Vector3 relative_p = p - plane.origin;//=> tis is the point p in the local space of the plane
 
-			const float local_x = Vector3::Dot(relative_p, plane.tangent);
-			const float local_y = Vector3::Dot(relative_p, bitangent);
-
-			if (abs(local_x) > bounds.x || abs(local_y) > bounds.y)
+			//const float local_x = Vector3::Dot(relative_p, plane.tangent);
+			//const float local_y = Vector3::Dot(relative_p, bitangent);
+			//if (abs(local_x) > bounds.x || abs(local_y) > bounds.y)
+			if (abs(Vector3::Dot(relative_p, plane.tangent)) > bounds.x || abs(Vector3::Dot(relative_p, bitangent)) > bounds.y)
 			{
 				return false;
 			}
@@ -118,6 +119,8 @@ namespace gfx
 		return true;
 	}
 
+
+
 	[[maybe_unused]]
 	static bool HitTestTriangle(const Triangle& triangle, const Ray& ray,
 		RayHitRecord& hit_record, const bool ignore_hit_record = false)
@@ -128,6 +131,7 @@ namespace gfx
 		{
 			return false;//Ray parallel with triangle
 		}
+
 		const CullMode cull_mode{ triangle.cull_mode };
 		if (cull_mode == CullMode::kBackFaceCulling)
 		{
@@ -171,7 +175,7 @@ namespace gfx
 			return false;
 		}
 
-		if (!ignore_hit_record)
+		if (!ignore_hit_record)		
 		{
 			hit_record.t = t;
 			hit_record.ray = ray;
