@@ -7,12 +7,12 @@
 #include <scenes.h>
 #include <intersections.h>
 #include <numbers>
-
+#include <numeric>//added by mathias
 using namespace gfx;
 
 // =============================================================================
 // Construction / Destruction
-// =============================================================================
+// =============================================================================	 
 SoftwarePathTracer::SoftwarePathTracer(Context* const context)
 	: Renderer(context)
 {
@@ -30,17 +30,6 @@ void SoftwarePathTracer::Render()
 	const SurfaceInfo& surface_info = context_->surface_info; //=> this holds info of your screen (width and height are for now the important once)
 	const float aspect_ratio{ surface_info.width / static_cast<float> (surface_info.height) }; //=> this is used to prevent skewing/stretching on none sqaure screens when used to multiply x of ray_direction
 
-
-	////Week1
-	////EX2
-	//const Sphere test_sphere{ Vector3{ 0.f,0.f,100.f },50.f }; // => simple test sphere(center coords,radius)
-	//const float fov{ 1 }; // ==> currently 1 because not needed for the exercise
-	////EX3 
-	//const Plane test_plane_inf{ Vector3{ 0.f,-50.f,0.f } ,Vector3{ 0.f,1.f,0.f } }; // => infinite plane(origin, normal) 
-	//const Plane test_plane_finite{ Vector3{ 0.f,-50.f,0.f } ,Vector3{ 0.f,1.f,0.f }, true,Vector2{100.f,100.f} };// => finite plane(origin, normal, is_double_sided, bounds) 
-	//const float fov{ 1 };//==> currently 1 because not needed for the exercise
-
-	////EX4 and up
 	const float fov_in_radiants{ context_->scene_manager->GetActiveScene()->camera.GetFovAngle() / 180.f * static_cast<float>(std::numbers::pi) }; // => calculating the fov angle from degres to radians because the camera.GetFovAngle() returns the angle in degrees
 	const float fov{ tanf(fov_in_radiants / 2.f) };// => calculating FOV(Field Of View)
 	Scene* pScene{ context_->scene_manager->GetActiveScene() };// => retreving the pointer of te active scene
@@ -50,18 +39,63 @@ void SoftwarePathTracer::Render()
 	{
 		for (uint32_t px = 0; px < surface_info.width; ++px)
 		{
-			////Week1
-			//W1Ex1(surface_info, px, py, aspect_ratio, fov);
-			//W1Ex2(surface_info, px, py, aspect_ratio, fov, test_sphere);
-			//W1Ex3(surface_info, px, py, aspect_ratio, fov, test_plane_inf);
-			//W1Ex3(surface_info, px, py, aspect_ratio, fov, test_plane_finite);
-			//W1Ex4(surface_info, pScene, px, py, aspect_ratio, fov);
+			RayHitRecord closest_hit_record{}; 	//Keeps track of the clossest hit with an object on the screen for the current pixel
+			ShadingInput shading_input{}; //Shading input for this pixel
 
-			//Week2
-			//W2Ex1(surface_info, pScene, px, py, aspect_ratio, fov);
-			W2Ex2(surface_info, pScene, px, py, aspect_ratio, fov);
+			//Calculate the Normalized Device Coordinates (NDC) 
+			Vector3 ray_direction{ 2 * (px + 0.5f) / surface_info.width - 1,1 - 2 * (py + 0.5f) / surface_info.height,1.f };
+			//Adding the aspectRatio to avoid skewing and multiplying to x, and multiplying with FOV
+			ray_direction.x *= aspect_ratio * fov;
+			ray_direction.y *= fov;
+			ray_direction.Normalize();
 
+			//Transform to take camera orientation into account and bringing the direction to world space
+			ray_direction = pScene->camera.GetView().GetInverse().TransformVector(ray_direction);
 
+			const Ray view_ray{ pScene->camera.GetPosition(), ray_direction }; // the ray that is cast from the camera to the current pixel
+
+			bool did_hit{ SceneClosestHitTest(pScene,view_ray,closest_hit_record) }; //Checking if there was a hit
+
+			ColorRgba final_color{};//=>Final color of a pixel
+			if (did_hit)
+			{
+				shading_input = ConstructShadingInput(pScene, closest_hit_record);//Calculate the shading input
+
+				const VisualizationMode& visual_mode{ context_->debug_params.visualization_mode };
+				if (visual_mode == VisualizationMode::kDepth)
+				{
+					const float max_depth{ 100.f };
+					const float scaled_t{ 1.f - std::clamp(closest_hit_record.t / max_depth,0.f,1.f) };
+					final_color = ColorRgba{ scaled_t, scaled_t, scaled_t };
+				}
+				else if (visual_mode == VisualizationMode::kNone || visual_mode == VisualizationMode::kAlbedo)
+				{
+					//Bit shift based onn the object index
+					const uint32_t idx{ closest_hit_record.object_index };
+					final_color = {
+						static_cast<float>(idx & 1),
+						static_cast<float>((idx >> 1) & 1),
+						static_cast<float>((idx >> 2) & 1)
+					};
+				}
+				else if (visual_mode == VisualizationMode::kNormals)
+				{
+					const Vector3& n{ shading_input.world_normal };
+					final_color = ColorRgba{ (n.x + 1.f) * 0.5f, (n.y + 1.f) * 0.5f, (n.z + 1.f) * 0.5f };
+				}
+				final_color.MaxToOne();
+			}
+			else
+			{
+				//no hit means the pixel gets the background color of the scene
+				final_color = pScene->background_color;
+			}
+			// Write to surface	
+			surface_info.pixel_buffer[px + (py * surface_info.width)] = SDL_MapRGB(
+				surface_info.pixel_format_details, nullptr,
+				static_cast<uint8_t>(final_color.r * 255),
+				static_cast<uint8_t>(final_color.g * 255),
+				static_cast<uint8_t>(final_color.b * 255));
 		}
 	}
 }
@@ -71,9 +105,9 @@ bool gfx::SoftwarePathTracer::SceneClosestHitTest(const Scene* scene, const Ray&
 	bool has_hit{}; // => Final boolean to be returned
 	//Looping over every object in the scene
 	Ray transformed_ray{ ray };
-	uint32_t idx{};
-	for (const gfx::SceneObject& object : scene->objects)
+	for (size_t idx{ 0 }; idx < scene->objects.size(); ++idx)
 	{
+		const gfx::SceneObject& object{ scene->objects[idx] };
 		//Retreving the primitive data and upcasting to the parent class
 		const Primitive* prim{ scene->primitives_factory.Get(object.primitive_index) };
 		const PrimitiveType type{ prim->type };
@@ -87,45 +121,45 @@ bool gfx::SoftwarePathTracer::SceneClosestHitTest(const Scene* scene, const Ray&
 
 		if (type == PrimitiveType::kPlane)
 		{
-			const Plane plane{ *prim->CloneAs<Plane>() };//cloning so that i got the original type 
-			hit = HitTestPlane(plane, transformed_ray, closest_hit, ignore_hit_record);//test if the ray hits the object 
+			const Plane* plane{ static_cast<const Plane*>(prim) };
+			hit = HitTestPlane(*plane, transformed_ray, closest_hit, ignore_hit_record);//test if the ray hits the object 
 
 		}
 		else if (type == PrimitiveType::kSphere)
 		{
-			const Sphere sphere{ *prim->CloneAs<Sphere>() };//cloning so that i got the original type 
-			hit = HitTestSphere(sphere, transformed_ray, closest_hit, ignore_hit_record);//test if the ray hits the object 
+			const Sphere* sphere{ static_cast<const Sphere*>(prim) };
+			hit = HitTestSphere(*sphere, transformed_ray, closest_hit, ignore_hit_record);//test if the ray hits the object 
 		}
 		else if (type == PrimitiveType::kTriangle)
 		{
-			const Triangle triangle{ *prim->CloneAs<Triangle>() };
-			hit = HitTestTriangle(triangle, transformed_ray, closest_hit, ignore_hit_record);
+			const Triangle* triangle{ static_cast<const Triangle*>(prim) };
+			hit = HitTestTriangle(*triangle, transformed_ray, closest_hit, ignore_hit_record);//test if the ray hits the object 
 		}
 		else if (type == PrimitiveType::kTriangleMesh)
 		{
-			const TriangleMesh triangle_mesh{ *prim->CloneAs<TriangleMesh>() };
-			for (size_t indece{ 0 }; indece < triangle_mesh.indices.size(); indece += 3)
+			const TriangleMesh* triangle_mesh{ static_cast<const TriangleMesh*>(prim) };
+			for (size_t indece{ 0 }; indece < triangle_mesh->indices.size(); indece += 3)
 			{
 				Triangle triangle{};
-				triangle.cull_mode = triangle_mesh.cull_mode;
+				triangle.cull_mode = triangle_mesh->cull_mode;
 
 				//Indixes of the vertex
-				const uint32_t i0{ triangle_mesh.indices[indece] };
-				const uint32_t i1{ triangle_mesh.indices[indece + 1] };
-				const uint32_t i2{ triangle_mesh.indices[indece + 2] };
+				const uint32_t i0{ triangle_mesh->indices[indece] };
+				const uint32_t i1{ triangle_mesh->indices[indece + 1] };
+				const uint32_t i2{ triangle_mesh->indices[indece + 2] };
 
 
-				triangle.v0 = triangle_mesh.vertices[i0].position;
-				triangle.v1 = triangle_mesh.vertices[i1].position;
-				triangle.v2 = triangle_mesh.vertices[i2].position;
+				//Setting the vertexes of the triangle
+				triangle.v0 = triangle_mesh->vertices[i0].position;
+				triangle.v1 = triangle_mesh->vertices[i1].position;
+				triangle.v2 = triangle_mesh->vertices[i2].position;
 
-
+				//Calculating the normal of the triangle
 				triangle.normal = Vector3::Cross((triangle.v1 - triangle.v0), (triangle.v2 - triangle.v0)).Normalized();
 
 				hit = HitTestTriangle(triangle, transformed_ray, closest_hit, ignore_hit_record);
 				if (hit && !ignore_hit_record)
 				{
-					//closest_hit.vertex_indices = { triangle_mesh.indices[indece] ,triangle_mesh.indices[indece + 1], triangle_mesh.indices[indece + 2] };
 					closest_hit.vertex_indices = { i0,i1,i2 };
 					closest_hit.object_index = idx;
 					has_hit = true;
@@ -151,7 +185,7 @@ bool gfx::SoftwarePathTracer::SceneClosestHitTest(const Scene* scene, const Ray&
 ShadingInput gfx::SoftwarePathTracer::ConstructShadingInput(const Scene* scene, const RayHitRecord& hit) const
 {
 	const Vector3 p{ hit.ray.origin + hit.t * hit.ray.direction };//local Point of impact(hit point)
-	const gfx::SceneObject& object{ scene->objects.at(hit.object_index) };
+	const gfx::SceneObject& object{ scene->objects.at(hit.object_index) }; //the hit object
 	const PrimitiveType type{ scene->primitives_factory.Get(object.primitive_index)->type }; // Type of the hit primitive
 
 	ShadingInput input{};
@@ -169,40 +203,39 @@ ShadingInput gfx::SoftwarePathTracer::ConstructShadingInput(const Scene* scene, 
 
 	if (type == PrimitiveType::kPlane)
 	{
-		input.world_normal = scene->primitives_factory.Get(object.primitive_index)->CloneAs<Plane>()->normal.Normalized(); //Normal of the plane that got hit
+		input.world_normal = static_cast<Plane*>(scene->primitives_factory.Get(object.primitive_index))->normal.Normalized(); //Normal of the plane that got hit
 	}
 	else if (type == PrimitiveType::kSphere)
 	{
 		//Note: Had to use the local space point to calculate the normal
-		input.world_normal = (p - scene->primitives_factory.Get(object.primitive_index)->CloneAs<Sphere>()->origin).Normalized();//normal between the hitpoint and the center of the sphere
+		input.world_normal = (p - static_cast<Sphere*>(scene->primitives_factory.Get(object.primitive_index))->origin).Normalized();//normal between the hitpoint and the center of the sphere
 	}
 	else if (type == PrimitiveType::kTriangle)
 	{
-		input.world_normal = scene->primitives_factory.Get(object.primitive_index)->CloneAs<Triangle>()->normal.Normalized(); //Normal of the triangle that got hit
+		input.world_normal = static_cast<Triangle*>(scene->primitives_factory.Get(object.primitive_index))->normal.Normalized(); //Normal of the triangle that got hit
 	}
 	else if (type == PrimitiveType::kTriangleMesh && hit.vertex_indices.has_value())
 	{
-		const TriangleMesh mesh{ *scene->primitives_factory.Get(object.primitive_index)->CloneAs<TriangleMesh>() };
+		const TriangleMesh* mesh{ static_cast<const TriangleMesh*>(scene->primitives_factory.Get(object.primitive_index)) };
 
 		//The normals of the vertices
-		const Vector3 n0{ mesh.vertices[hit.vertex_indices->at(0)].normal.value() };
-		const Vector3 n1{ mesh.vertices[hit.vertex_indices->at(1)].normal.value() };
-		const Vector3 n2{ mesh.vertices[hit.vertex_indices->at(2)].normal.value() };
+		const Vector3 n0{ mesh->vertices[hit.vertex_indices->at(0)].normal.value() };
+		const Vector3 n1{ mesh->vertices[hit.vertex_indices->at(1)].normal.value() };
+		const Vector3 n2{ mesh->vertices[hit.vertex_indices->at(2)].normal.value() };
 
 		Vector2 u_and_v = hit.barycentric_coordinates.value();
 		const float w{ 1 - u_and_v.x - u_and_v.y }; // calc w = 1-u-v;
 
 		input.world_normal = (n0 * w + n1 * u_and_v.x + n2 * u_and_v.y).Normalized(); // Smooth shading
 
-		//input.world_normal = (n0).Normalized(); // This is the normal used by the screenshot
-
+		
+		//input.world_normal = (n0).Normalized(); // This is the normal used by the screenshot for non smooth shading
 
 		//Used to calculate the triangle normal 
 		//const Vector3 v0 = mesh.vertices[hit.vertex_indices->at(0)].position;
 		//const Vector3 v1 = mesh.vertices[hit.vertex_indices->at(1)].position;
 		//const Vector3 v2 = mesh.vertices[hit.vertex_indices->at(2)].position;
 		//input.world_normal = Vector3::Cross(v1 - v0, v2 - v0).Normalized(); //=> this is the normal of the triangle
-
 	}
 
 	if (object.instance_transformation.has_value())
@@ -211,307 +244,4 @@ ShadingInput gfx::SoftwarePathTracer::ConstructShadingInput(const Scene* scene, 
 	}
 
 	return input;
-}
-
-void gfx::SoftwarePathTracer::W1Ex1(const SurfaceInfo& surface_info, uint32_t px, uint32_t py, float aspect_ratio, float fov) const
-{
-	//Calculate the Normalized Device Coordinates (NDC) 
-	Vector3 ray_direction{ 2 * (px + 0.5f) / surface_info.width - 1,1 - 2 * (py + 0.5f) / surface_info.height,1.f };
-
-	//Adding the aspectRatio to avoid skewing and multiplying to x
-	ray_direction.x *= aspect_ratio * fov;
-	ray_direction.y *= fov;
-	ray_direction.Normalize();
-
-	// Convert ray to color.
-	ColorRgba final_color{ ray_direction.x, ray_direction.y, ray_direction.z };
-	final_color.MaxToOne();
-
-	// Write to surface	
-	surface_info.pixel_buffer[px + (py * surface_info.width)] = SDL_MapRGB(
-		surface_info.pixel_format_details, nullptr,
-		static_cast<uint8_t>(final_color.r * 255),
-		static_cast<uint8_t>(final_color.g * 255),
-		static_cast<uint8_t>(final_color.b * 255));
-}
-
-void gfx::SoftwarePathTracer::W1Ex2(const SurfaceInfo& surface_info, uint32_t px, uint32_t py, float aspect_ratio, float fov, const Sphere& test_sphere, const Vector3& camera_origin) const
-{
-	//Calculate the Normalized Device Coordinates (NDC) 
-	Vector3 ray_direction{ 2 * (px + 0.5f) / surface_info.width - 1,1 - 2 * (py + 0.5f) / surface_info.height,1.f };
-
-	//Adding the aspectRatio to avoid skewing and multiplying to x
-	ray_direction.x *= aspect_ratio * fov;
-	ray_direction.y *= fov;
-	ray_direction.Normalize();
-
-	//Keeps track of the clossest hit with an object on the screen for the current pixel
-	RayHitRecord closest_hit_record{};
-	Ray view_ray{ camera_origin,ray_direction }; // the ray that is cast from the camera to the current pixel
-	bool did_hit{ HitTestSphere(test_sphere,view_ray,closest_hit_record) };//Checking if there was a hit
-	ShadingInput shading_input{};
-	if (!did_hit)
-	{
-		return;
-	}
-	const Vector3 p{ view_ray.origin + closest_hit_record.t * view_ray.direction };//Point of impact
-	shading_input.world_position = p;
-	shading_input.world_normal = (shading_input.world_position - test_sphere.origin).Normalized(); //see ConstructShadingInput
-
-	const VisualizationMode& visMode{ context_->debug_params.visualization_mode };//=> using f4 and f3 you can change the mode 
-	ColorRgba final_color{};
-	if (visMode == VisualizationMode::kDepth)
-	{
-		const float max_depth{ 100.f };
-		const float scaled_t{ 1.f - std::clamp(closest_hit_record.t / max_depth,0.f,1.f) };
-		final_color = ColorRgba{ scaled_t, scaled_t, scaled_t };
-	}
-	else if (visMode == VisualizationMode::kNone)
-	{
-		final_color = ColorRgba{ 1.f,0.f,0.f };
-	}
-	else if (visMode == VisualizationMode::kNormals)
-	{
-		const Vector3& n{ shading_input.world_normal };
-		final_color = ColorRgba{ (n.x + 1.f) * 0.5f, (n.y + 1.f) * 0.5f, (n.z + 1.f) * 0.5f };
-	}
-	final_color.MaxToOne();
-
-	// Write to surface	
-	surface_info.pixel_buffer[px + (py * surface_info.width)] = SDL_MapRGB(
-		surface_info.pixel_format_details, nullptr,
-		static_cast<uint8_t>(final_color.r * 255),
-		static_cast<uint8_t>(final_color.g * 255),
-		static_cast<uint8_t>(final_color.b * 255));
-}
-
-void gfx::SoftwarePathTracer::W1Ex3(const SurfaceInfo& surface_info, uint32_t px, uint32_t py, float aspect_ratio, float fov, const Plane& test_plane, const Vector3& camera_origin) const
-{
-	//Calculate the Normalized Device Coordinates (NDC) 
-	Vector3 ray_direction{ 2 * (px + 0.5f) / surface_info.width - 1,1 - 2 * (py + 0.5f) / surface_info.height,1.f };
-	//Adding the aspectRatio to avoid skewing and multiplying to x
-	ray_direction.x *= aspect_ratio * fov;
-	ray_direction.y *= fov;
-	ray_direction.Normalize();
-
-	//Keeps track of the clossest hit with an object on the screen for the current pixel
-	RayHitRecord closest_hit_record{};
-	Ray view_ray{ camera_origin,ray_direction };// the ray that is cast from the camera to the current pixel
-	bool did_hit{ HitTestPlane(test_plane,view_ray,closest_hit_record) };//Checking if there was a hit
-	ShadingInput shading_input{};
-	if (!did_hit)
-	{
-		return;
-	}
-	const Vector3 p{ view_ray.origin + closest_hit_record.t * view_ray.direction };//=> Point of impact
-	shading_input.world_position = p;
-	shading_input.world_normal = test_plane.normal.Normalized();  //see ConstructShadingInput
-
-	const VisualizationMode& visMode{ context_->debug_params.visualization_mode };//=> using f4 and f3 you can change the mode 
-	ColorRgba final_color{};
-	if (visMode == VisualizationMode::kDepth)
-	{
-		const float max_depth{ 100.f };
-		const float scaled_t{ 1.f - std::clamp(closest_hit_record.t / max_depth,0.f,1.f) };
-		final_color = ColorRgba{ scaled_t, scaled_t, scaled_t };
-	}
-	else if (visMode == VisualizationMode::kNone)
-	{
-		final_color = ColorRgba{ 1.f,0.f,0.f };
-	}
-	else if (visMode == VisualizationMode::kNormals)
-	{
-		const Vector3& n{ shading_input.world_normal };
-		final_color = ColorRgba{ (n.x + 1) * 0.5f,(n.y + 1) * 0.5f,(n.z + 1) * 0.5f };
-	}
-	final_color.MaxToOne();
-
-	// Write to surface	
-	surface_info.pixel_buffer[px + (py * surface_info.width)] = SDL_MapRGB(
-		surface_info.pixel_format_details, nullptr,
-		static_cast<uint8_t>(final_color.r * 255),
-		static_cast<uint8_t>(final_color.g * 255),
-		static_cast<uint8_t>(final_color.b * 255));
-}
-
-void gfx::SoftwarePathTracer::W1Ex4(const SurfaceInfo& surface_info, const Scene* pScene, uint32_t px, uint32_t py, float aspect_ratio, float fov)
-{
-
-	RayHitRecord closest_hit_record{}; 	//Keeps track of the clossest hit with an object on the screen for the current pixel
-	ShadingInput shading_input{}; //Shading input for this pixel
-
-	//Calculate the Normalized Device Coordinates (NDC) 
-	Vector3 ray_direction{ 2 * (px + 0.5f) / surface_info.width - 1,1 - 2 * (py + 0.5f) / surface_info.height,1.f };
-	//Adding the aspectRatio to avoid skewing and multiplying to x, and multiplying with FOV
-	ray_direction.x *= aspect_ratio * fov;
-	ray_direction.y *= fov;
-	ray_direction.Normalize();
-
-	const Ray view_ray{ pScene->camera.GetPosition(), ray_direction }; // the ray that is cast from the camera to the current pixel
-
-	bool did_hit{ SceneClosestHitTest(pScene,view_ray,closest_hit_record) }; //Checking if there was a hit
-
-	ColorRgba final_color{};//final color of a pixel
-	if (did_hit)
-	{
-		shading_input = ConstructShadingInput(pScene, closest_hit_record);//Calculate the shading input
-
-		const VisualizationMode& visual_mode{ context_->debug_params.visualization_mode };
-		if (visual_mode == VisualizationMode::kDepth)
-		{
-			const float max_depth{ 100.f };
-			const float scaled_t{ 1.f - std::clamp(closest_hit_record.t / max_depth,0.f,1.f) };
-			final_color = ColorRgba{ scaled_t, scaled_t, scaled_t };
-		}
-		else if (visual_mode == VisualizationMode::kNone)
-		{
-			//Bit shift based onn the object index
-			const uint32_t idx{ closest_hit_record.object_index };
-			final_color = {
-				static_cast<float>(idx & 1),
-				static_cast<float>((idx >> 1) & 1),
-				static_cast<float>((idx >> 2) & 1)
-			};
-		}
-		else if (visual_mode == VisualizationMode::kNormals)
-		{
-			const Vector3& n{ shading_input.world_normal };
-			final_color = ColorRgba{ (n.x + 1.f) * 0.5f, (n.y + 1.f) * 0.5f, (n.z + 1.f) * 0.5f };
-		}
-		final_color.MaxToOne();
-	}
-	else
-	{
-		//no hit means the pixel gets the background color of the scene
-		final_color = pScene->background_color;
-	}
-	// Write to surface	
-	surface_info.pixel_buffer[px + (py * surface_info.width)] = SDL_MapRGB(
-		surface_info.pixel_format_details, nullptr,
-		static_cast<uint8_t>(final_color.r * 255),
-		static_cast<uint8_t>(final_color.g * 255),
-		static_cast<uint8_t>(final_color.b * 255));
-}
-
-void gfx::SoftwarePathTracer::W2Ex1(const SurfaceInfo& surface_info, Scene* pScene, uint32_t px, uint32_t py, float aspect_ratio, float fov)
-{
-
-	RayHitRecord closest_hit_record{}; 	//Keeps track of the clossest hit with an object on the screen for the current pixel
-	ShadingInput shading_input{}; //Shading input for this pixel
-
-	//Calculate the Normalized Device Coordinates (NDC) 
-	Vector3 ray_direction{ 2 * (px + 0.5f) / surface_info.width - 1,1 - 2 * (py + 0.5f) / surface_info.height,1.f };
-	//Transform to take camera orientation into account and bringing the direction to world space
-	ray_direction = pScene->camera.GetView().GetInverse().TransformVector(ray_direction);
-	//Adding the aspectRatio to avoid skewing and multiplying to x, and multiplying with FOV
-	ray_direction.x *= aspect_ratio * fov;
-	ray_direction.y *= fov;
-	ray_direction.Normalize();
-
-	const Ray view_ray{ pScene->camera.GetPosition(), ray_direction }; // the ray that is cast from the camera to the current pixel
-
-	bool did_hit{ SceneClosestHitTest(pScene,view_ray,closest_hit_record) }; //Checking if there was a hit
-
-	ColorRgba final_color{};//=>Final color of a pixel
-	if (did_hit)
-	{
-		shading_input = ConstructShadingInput(pScene, closest_hit_record);//Calculate the shading input
-
-		const VisualizationMode& visual_mode{ context_->debug_params.visualization_mode };
-		if (visual_mode == VisualizationMode::kDepth)
-		{
-			const float max_depth{ 100.f };
-			const float scaled_t{ 1.f - std::clamp(closest_hit_record.t / max_depth,0.f,1.f) };
-			final_color = ColorRgba{ scaled_t, scaled_t, scaled_t };
-		}
-		else if (visual_mode == VisualizationMode::kNone || visual_mode == VisualizationMode::kAlbedo)
-		{
-			//Bit shift based onn the object index
-			const uint32_t idx{ closest_hit_record.object_index };
-			final_color = {
-				static_cast<float>(idx & 1),
-				static_cast<float>((idx >> 1) & 1),
-				static_cast<float>((idx >> 2) & 1)
-			};
-		}
-		else if (visual_mode == VisualizationMode::kNormals)
-		{
-			const Vector3& n{ shading_input.world_normal };
-			final_color = ColorRgba{ (n.x + 1.f) * 0.5f, (n.y + 1.f) * 0.5f, (n.z + 1.f) * 0.5f };
-		}
-		final_color.MaxToOne();
-	}
-	else
-	{
-		//no hit means the pixel gets the background color of the scene
-		final_color = pScene->background_color;
-	}
-	// Write to surface	
-	surface_info.pixel_buffer[px + (py * surface_info.width)] = SDL_MapRGB(
-		surface_info.pixel_format_details, nullptr,
-		static_cast<uint8_t>(final_color.r * 255),
-		static_cast<uint8_t>(final_color.g * 255),
-		static_cast<uint8_t>(final_color.b * 255));
-}
-
-void gfx::SoftwarePathTracer::W2Ex2(const SurfaceInfo& surface_info, Scene* pScene, uint32_t px, uint32_t py, float aspect_ratio, float fov)
-{
-
-	RayHitRecord closest_hit_record{}; 	//Keeps track of the clossest hit with an object on the screen for the current pixel
-	ShadingInput shading_input{}; //Shading input for this pixel
-
-	//Calculate the Normalized Device Coordinates (NDC) 
-	Vector3 ray_direction{ 2 * (px + 0.5f) / surface_info.width - 1,1 - 2 * (py + 0.5f) / surface_info.height,1.f };
-	//Adding the aspectRatio to avoid skewing and multiplying to x, and multiplying with FOV
-	ray_direction.x *= aspect_ratio * fov;
-	ray_direction.y *= fov;
-	ray_direction.Normalize();
-
-	//Transform to take camera orientation into account and bringing the direction to world space
-	ray_direction = pScene->camera.GetView().GetInverse().TransformVector(ray_direction);
-
-	const Ray view_ray{ pScene->camera.GetPosition(), ray_direction }; // the ray that is cast from the camera to the current pixel
-
-	bool did_hit{ SceneClosestHitTest(pScene,view_ray,closest_hit_record) }; //Checking if there was a hit
-
-	ColorRgba final_color{};//=>Final color of a pixel
-	if (did_hit)
-	{
-		shading_input = ConstructShadingInput(pScene, closest_hit_record);//Calculate the shading input
-
-		const VisualizationMode& visual_mode{ context_->debug_params.visualization_mode };
-		if (visual_mode == VisualizationMode::kDepth)
-		{
-			const float max_depth{ 100.f };
-			const float scaled_t{ 1.f - std::clamp(closest_hit_record.t / max_depth,0.f,1.f) };
-			final_color = ColorRgba{ scaled_t, scaled_t, scaled_t };
-		}
-		else if (visual_mode == VisualizationMode::kNone || visual_mode == VisualizationMode::kAlbedo)
-		{
-			//Bit shift based onn the object index
-			const uint32_t idx{ closest_hit_record.object_index };
-			final_color = {
-				static_cast<float>(idx & 1),
-				static_cast<float>((idx >> 1) & 1),
-				static_cast<float>((idx >> 2) & 1)
-			};
-		}
-		else if (visual_mode == VisualizationMode::kNormals)
-		{
-			const Vector3& n{ shading_input.world_normal };
-			final_color = ColorRgba{ (n.x + 1.f) * 0.5f, (n.y + 1.f) * 0.5f, (n.z + 1.f) * 0.5f };
-		}
-		final_color.MaxToOne();
-	}
-	else
-	{
-		//no hit means the pixel gets the background color of the scene
-		final_color = pScene->background_color;
-	}
-	// Write to surface	
-	surface_info.pixel_buffer[px + (py * surface_info.width)] = SDL_MapRGB(
-		surface_info.pixel_format_details, nullptr,
-		static_cast<uint8_t>(final_color.r * 255),
-		static_cast<uint8_t>(final_color.g * 255),
-		static_cast<uint8_t>(final_color.b * 255));
 }

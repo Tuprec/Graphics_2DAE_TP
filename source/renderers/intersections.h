@@ -119,12 +119,11 @@ namespace gfx
 		return true;
 	}
 
-
-
 	[[maybe_unused]]
-	static bool HitTestTriangle(const Triangle& triangle, const Ray& ray,
-		RayHitRecord& hit_record, const bool ignore_hit_record = false)
+	static bool HitTestTriangle(const Triangle& triangle, const Ray& ray, RayHitRecord& hit_record, const bool ignore_hit_record = false)
 	{
+		//Möller-Trumbore methode
+
 		//Parallel test of ray direction and stored triangle normal
 		const float n_dot_r{ Vector3::Dot(triangle.normal,ray.direction) };
 		if (abs(n_dot_r) < FLT_EPSILON)
