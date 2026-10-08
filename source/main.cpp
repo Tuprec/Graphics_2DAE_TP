@@ -242,9 +242,9 @@ int main(int, char**)
 	// Create scenes based on active renderer.
 #if defined(SOFTWARE_PATH_TRACER)
 	context.scene_manager->CreateScene<BasicScene>();
-	context.scene_manager->CreateScene<InstanceScene>();
-	context.scene_manager->CreateScene<TriangleScene>();
-	context.scene_manager->CreateScene<BunnyScene>();
+	//context.scene_manager->CreateScene<InstanceScene>();
+	//context.scene_manager->CreateScene<TriangleScene>();
+	//context.scene_manager->CreateScene<BunnyScene>();
 #elif defined(SOFTWARE_RASTERIZER)
 #elif defined(HARDWARE_RASTERIZER)
 #endif

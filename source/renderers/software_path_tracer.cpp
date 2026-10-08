@@ -34,12 +34,12 @@ void SoftwarePathTracer::Render()
 	const float fov_in_radiants{ context_->scene_manager->GetActiveScene()->camera.GetFovAngle() / 180.f * static_cast<float>(std::numbers::pi) }; // => calculating the fov angle from degres to radians because the camera.GetFovAngle() returns the angle in degrees
 	const float fov{ tanf(fov_in_radiants / 2.f) };// => calculating FOV(Field Of View)
 	Scene* pScene{ context_->scene_manager->GetActiveScene() };// => retreving the pointer of te active scene
-
-	//Dubbel for loop to loop over every pixel on screen
-	for (uint32_t py = 0; py < surface_info.height; ++py)
-	{
-		for (uint32_t px = 0; px < surface_info.width; ++px)
+	const Matrix& cam_inverse{ pScene->camera.GetView().GetInverse() };
+	
+	const auto per_pixel_fnc = [&](const uint32_t pixel_idx)
 		{
+			const uint32_t px{ pixel_idx % surface_info.width };
+			const uint32_t py{ pixel_idx / surface_info.width };
 			RayHitRecord closest_hit_record{}; 	//Keeps track of the clossest hit with an object on the screen for the current pixel
 			ShadingInput shading_input{}; //Shading input for this pixel
 
@@ -51,7 +51,7 @@ void SoftwarePathTracer::Render()
 			ray_direction.Normalize();
 
 			//Transform to take camera orientation into account and bringing the direction to world space
-			ray_direction = pScene->camera.GetView().GetInverse().TransformVector(ray_direction);
+			ray_direction = cam_inverse.TransformVector(ray_direction);
 
 			const Ray view_ray{ pScene->camera.GetPosition(), ray_direction }; // the ray that is cast from the camera to the current pixel
 
@@ -97,8 +97,11 @@ void SoftwarePathTracer::Render()
 				static_cast<uint8_t>(final_color.r * 255),
 				static_cast<uint8_t>(final_color.g * 255),
 				static_cast<uint8_t>(final_color.b * 255));
-		}
-	}
+		};
+
+	std::vector<uint32_t> pixel_indices( surface_info.width * surface_info.height );
+	std::iota(pixel_indices.begin(), pixel_indices.end(), 0);
+	std::for_each(std::execution::par, pixel_indices.begin(), pixel_indices.end(), per_pixel_fnc);
 }
 
 bool gfx::SoftwarePathTracer::SceneClosestHitTest(const Scene* scene, const Ray& ray, RayHitRecord& closest_hit, bool ignore_hit_record) const
