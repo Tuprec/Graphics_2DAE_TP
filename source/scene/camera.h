@@ -78,9 +78,9 @@ namespace gfx
 
 		const Matrix& GetView()
 		{
-			//const Vector3 right{ Vector3::Cross(Vector3::UnitY(),forward_) };//Vector3::UnitY() is the world up;
-			//const Vector3 local_up{Vector3::Cross(forward_,right)};
-			view_ = Matrix::CreateLookAtLH(position_, forward_, up_);
+			const Vector3 right{ Vector3::Cross(Vector3::UnitY(),forward_) };//Vector3::UnitY() is the world up;
+			const Vector3 local_up{Vector3::Cross(forward_,right)};
+			view_ = Matrix::CreateLookAtLH(position_, forward_, local_up).Transpose();
 			return view_;
 		}
 		const Matrix& GetProjection(const float fov_y, const float aspect_ratio)

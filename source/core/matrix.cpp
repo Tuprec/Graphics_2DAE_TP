@@ -340,7 +340,7 @@ Matrix Matrix::Inverse(const Matrix& m)
 Matrix Matrix::CreateLookAtLH(const Vector3& origin, const Vector3& forward, const Vector3& up)
 {
 	const Vector3 right{ Vector3::Cross(up,forward).Normalized() };
-	const Vector3 postion{ Vector3::Dot(origin,Vector3::UnitX()),Vector3::Dot(origin,Vector3::UnitY()) ,Vector3::Dot(origin,Vector3::UnitZ()) };
+	const Vector3 postion{ -Vector3::Dot(origin,Vector3::UnitX()),-Vector3::Dot(origin,Vector3::UnitY()) ,-Vector3::Dot(origin,Vector3::UnitZ()) };
 	return {
 		right.ToVector4(),//{x,y,z,0}
 		up.ToVector4(),//{x,y,z,0}
