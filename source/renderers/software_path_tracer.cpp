@@ -8,6 +8,7 @@
 #include <intersections.h>
 #include <numbers>
 #include <numeric>//added by mathias
+#include <execution>
 using namespace gfx;
 
 // =============================================================================
@@ -161,7 +162,7 @@ bool gfx::SoftwarePathTracer::SceneClosestHitTest(const Scene* scene, const Ray&
 				if (hit && !ignore_hit_record)
 				{
 					closest_hit.vertex_indices = { i0,i1,i2 };
-					closest_hit.object_index = idx;
+					closest_hit.object_index = static_cast<uint32_t>(idx);
 					has_hit = true;
 				}
 			}
@@ -173,11 +174,10 @@ bool gfx::SoftwarePathTracer::SceneClosestHitTest(const Scene* scene, const Ray&
 		{
 			if (!ignore_hit_record)
 			{
-				closest_hit.object_index = idx;
+				closest_hit.object_index = static_cast<uint32_t>(idx);
 			}
 			has_hit = true;//Setting the main return variable to true because there was a hit.
 		}
-		++idx;
 	}
 	return has_hit;
 }
