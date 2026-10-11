@@ -174,7 +174,7 @@ namespace gfx
 			return false;
 		}
 
-		if (!ignore_hit_record)		
+		if (!ignore_hit_record)
 		{
 			hit_record.t = t;
 			hit_record.ray = ray;
@@ -187,10 +187,41 @@ namespace gfx
 	[[maybe_unused]]
 	static bool HitTestAABB(const AABB& aabb, const Ray& ray)
 	{
-		//TODO
-		assert(false && "Not Implemented");
-		(void)aabb; (void)ray;
-		return false;
+		float tMin{ ray.min };
+		float tMax{ ray.max };
+
+		for (uint8_t axis{ 0 }; axis < 3; ++axis)
+		{
+			const float origin{ ray.origin[axis] };
+			const float direction{ ray.direction[axis] };
+
+			const float boxMin{ aabb.min[axis] };
+			const float boxMax{ aabb.max[axis] };
+
+			if (std::abs(direction) < FLT_EPSILON)
+			{
+				if (origin < boxMin || origin > boxMax)
+					return false;
+
+				continue;
+			}
+
+			const float invDirection{ 1.0f / direction };
+
+			float t1{ (boxMin - origin) * invDirection };
+			float t2{ (boxMax - origin) * invDirection };
+
+			if (t1 > t2)
+				std::swap(t1, t2);
+
+			tMin = std::max(tMin, t1);
+			tMax = std::min(tMax, t2);
+
+			if (tMin > tMax)
+				return false;
+		}
+
+		return true;
 	}
 }
 #endif //INTERSECTIONS_HEADER

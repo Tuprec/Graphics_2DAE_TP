@@ -35,7 +35,7 @@ void SoftwarePathTracer::Render()
 	const float fov{ tanf(fov_in_radiants / 2.f) };// => calculating FOV(Field Of View)
 	Scene* pScene{ context_->scene_manager->GetActiveScene() };// => retreving the pointer of te active scene
 	const Matrix& cam_inverse{ pScene->camera.GetView().GetInverse() };
-	
+
 	const auto per_pixel_fnc = [&](const uint32_t pixel_idx)
 		{
 			const uint32_t px{ pixel_idx % surface_info.width };
@@ -99,7 +99,7 @@ void SoftwarePathTracer::Render()
 				static_cast<uint8_t>(final_color.b * 255));
 		};
 
-	std::vector<uint32_t> pixel_indices( surface_info.width * surface_info.height );
+	std::vector<uint32_t> pixel_indices(surface_info.width * surface_info.height);
 	std::iota(pixel_indices.begin(), pixel_indices.end(), 0);
 	std::for_each(std::execution::par, pixel_indices.begin(), pixel_indices.end(), per_pixel_fnc);
 }
@@ -115,12 +115,18 @@ bool gfx::SoftwarePathTracer::SceneClosestHitTest(const Scene* scene, const Ray&
 		//Retreving the primitive data and upcasting to the parent class
 		const Primitive* prim{ scene->primitives_factory.Get(object.primitive_index) };
 		const PrimitiveType type{ prim->type };
+
 		//Temp variable to see if the current pixel has a hit
 		bool hit{};
 
 		if (object.instance_transformation.has_value())
 		{
 			transformed_ray = object.instance_transformation->TransformRay(ray);
+		}
+
+		if (prim->bounding_box.has_value() && !HitTestAABB(prim->bounding_box.value(), transformed_ray))
+		{
+			continue;
 		}
 
 		if (type == PrimitiveType::kPlane)
@@ -231,7 +237,7 @@ ShadingInput gfx::SoftwarePathTracer::ConstructShadingInput(const Scene* scene, 
 
 		input.world_normal = (n0 * w + n1 * u_and_v.x + n2 * u_and_v.y).Normalized(); // Smooth shading
 
-		
+
 		//input.world_normal = (n0).Normalized(); // This is the normal used by the screenshot for non smooth shading
 
 		//Used to calculate the triangle normal 

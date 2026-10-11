@@ -187,7 +187,7 @@ namespace gfx
 			return alignof(Plane);
 		}
 
-		void UpdateAABB() override {}
+		void UpdateAABB() override;
 
 	private:
 		// Building an Orthonormal Basis (Duff et al., JCGT 2017).
