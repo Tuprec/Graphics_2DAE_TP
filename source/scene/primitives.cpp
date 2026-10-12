@@ -91,6 +91,7 @@ void TriangleMesh::UpdateAABB()
 	}
 }
 
+//Credits to Robbe
 void gfx::BuildBVHNode(
 	std::vector<BVHNode>& bvh_nodes,
 	std::vector<uint32_t>& bvh_tri_indices,
