@@ -148,31 +148,76 @@ bool gfx::SoftwarePathTracer::SceneClosestHitTest(const Scene* scene, const Ray&
 		else if (type == PrimitiveType::kTriangleMesh)
 		{
 			const TriangleMesh* triangle_mesh{ static_cast<const TriangleMesh*>(prim) };
-			for (size_t indece{ 0 }; indece < triangle_mesh->indices.size(); indece += 3)
+			if (triangle_mesh->bvh_nodes.empty())
 			{
-				Triangle triangle{};
-				triangle.cull_mode = triangle_mesh->cull_mode;
-
-				//Indixes of the vertex
-				const uint32_t i0{ triangle_mesh->indices[indece] };
-				const uint32_t i1{ triangle_mesh->indices[indece + 1] };
-				const uint32_t i2{ triangle_mesh->indices[indece + 2] };
+				continue;
+			}
+			std::vector<uint32_t> node_stack{};
 
 
-				//Setting the vertexes of the triangle
-				triangle.v0 = triangle_mesh->vertices[i0].position;
-				triangle.v1 = triangle_mesh->vertices[i1].position;
-				triangle.v2 = triangle_mesh->vertices[i2].position;
+			node_stack.push_back(0);
 
-				//Calculating the normal of the triangle
-				triangle.normal = Vector3::Cross((triangle.v1 - triangle.v0), (triangle.v2 - triangle.v0)).Normalized();
+			while (!node_stack.empty())
+			{
+				const uint32_t node_idx = node_stack.back();
+				node_stack.pop_back();
 
-				hit = HitTestTriangle(triangle, transformed_ray, closest_hit, ignore_hit_record);
-				if (hit && !ignore_hit_record)
+				const BVHNode& node = triangle_mesh->bvh_nodes[node_idx];
+
+				// 1. Skip nodes missed by the ray.
+				if (!HitTestAABB(node.bounds, transformed_ray))
 				{
-					closest_hit.vertex_indices = { i0,i1,i2 };
-					closest_hit.object_index = static_cast<uint32_t>(idx);
-					has_hit = true;
+					continue;
+				}
+
+				// 2. Test triangles if this is a leaf.
+				if (node.IsLeaf())
+				{
+
+					for (uint32_t idx_sub = 0; idx_sub < node.tri_count; idx_sub++)
+					{
+						const uint32_t triangle_index = triangle_mesh->bvh_tri_indices[node.first_tri + idx_sub];
+
+						const size_t index_offset = static_cast<size_t>(triangle_index) * 3;
+
+						if (index_offset + 2 >= triangle_mesh->indices.size())
+						{
+							continue;
+						}
+
+						const uint32_t i0 = triangle_mesh->indices[index_offset];
+						const uint32_t i1 = triangle_mesh->indices[index_offset + 1];
+						const uint32_t i2 = triangle_mesh->indices[index_offset + 2];
+
+						Triangle triangle{};
+						triangle.cull_mode = triangle_mesh->cull_mode;
+
+						triangle.v0 = triangle_mesh->vertices[i0].position;
+						triangle.v1 = triangle_mesh->vertices[i1].position;
+						triangle.v2 = triangle_mesh->vertices[i2].position;
+
+						const Vector3 edge0 = triangle.v1 - triangle.v0;
+						const Vector3 edge1 = triangle.v2 - triangle.v0;
+
+						triangle.normal = Vector3::Cross(edge0, edge1).Normalized();
+
+
+						hit = HitTestTriangle(triangle, transformed_ray, closest_hit, ignore_hit_record);
+
+						// keep the closest hit.
+						if (hit)
+						{
+							closest_hit.vertex_indices = { i0, i1, i2 };
+							closest_hit.object_index = static_cast<uint32_t>(idx);
+							has_hit = true;
+						}
+					}
+				}
+				else
+				{
+					// 3. Push both children.
+					node_stack.push_back(node.left_child);
+					node_stack.push_back(node.left_child + 1);
 				}
 			}
 		}
@@ -190,6 +235,7 @@ bool gfx::SoftwarePathTracer::SceneClosestHitTest(const Scene* scene, const Ray&
 	}
 	return has_hit;
 }
+
 
 ShadingInput gfx::SoftwarePathTracer::ConstructShadingInput(const Scene* scene, const RayHitRecord& hit) const
 {

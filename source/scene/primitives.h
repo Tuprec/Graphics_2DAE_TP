@@ -345,8 +345,9 @@ namespace gfx
 		}
 
 		void UpdateAABB() override;
-		uint32_t BuildBVHNode(uint32_t begin, uint32_t end, const std::vector<AABB>& aabbs, const std::vector<Vector3>& centroids);
+
 	};
+	void BuildBVHNode(std::vector<BVHNode>& bvh_nodes, std::vector<uint32_t>& bvh_tri_indices, const std::vector<AABB>& triangle_aabbs, const std::vector<Vector3>& triangle_centroids, const uint32_t node_index, const uint32_t start, const uint32_t end);
 }
 
 #endif //PRIMITIVES_HEADER

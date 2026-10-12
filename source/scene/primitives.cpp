@@ -45,7 +45,7 @@ void Triangle::UpdateAABB()
 
 void TriangleMesh::UpdateAABB()
 {
-	const uint32_t triangle_count{ indices.size() / 3 };
+	const uint32_t triangle_count{ static_cast<uint32_t>(indices.size() / 3) };
 	bvh_tri_indices.resize(triangle_count);
 	std::iota(bvh_tri_indices.begin(), bvh_tri_indices.end(), 0);
 	std::vector<AABB> aabbs{};
@@ -66,9 +66,9 @@ void TriangleMesh::UpdateAABB()
 		const Vector3 v1 = vertices[i1].position;
 		const Vector3 v2 = vertices[i2].position;
 
+		const uint32_t aabb_idx{ static_cast<uint32_t>(aabbs.size()) };
 		aabbs.push_back(AABB{});
 
-		const int32_t aabb_idx{ aabbs.size() };
 
 		aabbs[aabb_idx].ExpandToInclude(v0);
 		aabbs[aabb_idx].ExpandToInclude(v1);
@@ -85,128 +85,154 @@ void TriangleMesh::UpdateAABB()
 	if (!bvh_tri_indices.empty())
 	{
 		bvh_nodes.reserve(2 * bvh_tri_indices.size());
+		bvh_nodes.emplace_back(); // Create root at index 0.
 
-		BuildBVHNode(0, static_cast<uint32_t>(bvh_tri_indices.size()), aabbs, centroids);
+		BuildBVHNode(bvh_nodes, bvh_tri_indices, aabbs, centroids, 0, 0, triangle_count);
 	}
 }
 
-uint32_t TriangleMesh::BuildBVHNode(uint32_t begin, uint32_t end, const std::vector<AABB>& aabbs, const std::vector<Vector3>& centroids)
+void gfx::BuildBVHNode(
+	std::vector<BVHNode>& bvh_nodes,
+	std::vector<uint32_t>& bvh_tri_indices,
+	const std::vector<AABB>& triangle_aabbs,
+	const std::vector<Vector3>& triangle_centroids,
+	const uint32_t node_index, const uint32_t start, const uint32_t end)
 {
-	constexpr uint32_t MAX_TRIANGLES_PER_LEAF{ 4 };
-
-	const uint32_t node_idx{ static_cast<uint32_t>(bvh_nodes.size()) };
-
-	bvh_nodes.emplace_back();
-
-	AABB bounds{};
-
-	for (uint32_t i{ begin }; i < end; ++i)
+	enum class SplitAxis
 	{
-		bounds.ExpandToInclude(aabbs[bvh_tri_indices[i]]);
+		kNone, kX, kY, kZ
+	};
+
+	BVHNode& node{ bvh_nodes[node_index] };
+
+	// 4. Create and bound the node.
+	for (uint32_t i{ start }; i < end; ++i)
+	{
+		const uint32_t triangle_index{ bvh_tri_indices[i] };
+		node.bounds.ExpandToInclude(triangle_aabbs[triangle_index]);
 	}
 
-	bvh_nodes[node_idx].bounds = bounds;
+	const uint32_t triangle_count{ end - start };
 
-	const uint32_t count{ end - begin };
+	// 5. Subdivide nodes until a leaf condition is met.
+	constexpr uint32_t kMaxTrianglesPerLeaf{ 4 };
 
-	if (count <= MAX_TRIANGLES_PER_LEAF)
+	if (triangle_count <= kMaxTrianglesPerLeaf)
 	{
-		bvh_nodes[node_idx].first_tri = begin;
-		bvh_nodes[node_idx].tri_count = count;
-		return node_idx;
+		node.first_tri = start;
+		node.tri_count = triangle_count;
+		return;
 	}
 
+	// 6. Choose a split axis and position.
 	AABB centroid_bounds{};
 
-	for (uint32_t i{ begin }; i < end; ++i)
+	for (uint32_t i{ start }; i < end; ++i)
 	{
-		centroid_bounds.ExpandToInclude(centroids[bvh_tri_indices[i]]);
+		const uint32_t triangle_index{ bvh_tri_indices[i] };
+		centroid_bounds.ExpandToInclude(
+			triangle_centroids[triangle_index]
+		);
 	}
 
-	const Vector3 size = centroid_bounds.GetSize();
-	const Vector3 center = centroid_bounds.GetCenter();
+	const Vector3 centroid_size{
+		centroid_bounds.GetSize()
+	};
 
-	uint32_t axis = 0;
-
-	if (size.y > size.x && size.y >= size.z)
+	SplitAxis split_axis{ SplitAxis::kNone };
+	float split_position{};
+	// X
+	if (centroid_size.x > centroid_size.y && centroid_size.x > centroid_size.z)
 	{
-		axis = 1;
+		split_axis = SplitAxis::kX;
+		split_position =
+			(centroid_bounds.min.x + centroid_bounds.max.x) * 0.5f;
 	}
-	else if (size.z > size.x && size.z > size.y)
+	// Y
+	else if (centroid_size.y > centroid_size.x && centroid_size.y > centroid_size.z)
 	{
-		axis = 2;
+		split_axis = SplitAxis::kY;
+		split_position =
+			(centroid_bounds.min.y + centroid_bounds.max.y) * 0.5f;
 	}
-
-	float split_position{ center.x };
-
-	if (axis == 1)
+	// Z
+	else
 	{
-		split_position = center.y;
+		split_axis = SplitAxis::kZ;
+		split_position =
+			(centroid_bounds.min.z + centroid_bounds.max.z) * 0.5f;
 	}
-	else if (axis == 2)
-	{
-		split_position = center.z;
-	}
+	// 7. Partition the node's indices around the split.
+	//      Handle a one - sided partition!
 
-	uint32_t left{ begin };
-	uint32_t right{ end - 1 };
-
-	while (left <= right)
-	{
-		float value = 0.0f;
-
-		if (axis == 0)
-		{
-			value = centroids[bvh_tri_indices[left]].x;
-		}
-		else if (axis == 1)
-		{
-			value = centroids[bvh_tri_indices[left]].y;
-		}
-		else
-		{
-			value = centroids[bvh_tri_indices[left]].z;
-		}
-
-		if (value < split_position)
-		{
-			++left;
-		}
-		else
-		{
-			const uint32_t temp{ bvh_tri_indices[left] };
-			bvh_tri_indices[left] = bvh_tri_indices[right];
-			bvh_tri_indices[right] = temp;
-
-			if (right == 0)
+	// Order first by position < split axis then position > split axis
+	// "std::partition rearranges elements and returns an iterator pointing to the first element of the second group (the elements that evaluated to false)."
+	// "std::distance or pointer subtraction (it - v.begin()) calculates the integer index of that boundary in O(1) time."
+	auto middle{
+		std::partition(bvh_tri_indices.begin() + start, bvh_tri_indices.begin() + end,[&](const uint32_t triangle_index)
 			{
-				break;
+				const Vector3& centroid { triangle_centroids[triangle_index] };
+
+				float value{};
+				if (split_axis == SplitAxis::kX)
+				{
+					value = centroid.x;
+				}
+				else if (split_axis == SplitAxis::kY)
+				{
+					value = centroid.y;
+				}
+				else if (split_axis == SplitAxis::kZ)
+				{
+					value = centroid.z;
+				}
+
+				return value < split_position;
 			}
+		)
+	};
+	const uint32_t middle_index{ static_cast<uint32_t>(std::distance(bvh_tri_indices.begin(), middle)) };
 
-			--right;
-		}
-	}
-
-	uint32_t mid{ left };
-
-	if (mid <= begin || mid >= end)
+	// No usefull split 
+	if (middle_index == start || middle_index == end)
 	{
-		mid = begin + count / 2;
+		node.first_tri = start;
+		node.tri_count = triangle_count;
+		return;
 	}
+	// 8. Create and bound two child nodes if split happened.
+	//      Here you can use the helper function from before.
 
-	const uint32_t left_child{ BuildBVHNode(begin, mid, aabbs, centroids) };
+	// set left_child_index after the last node 
+	const uint32_t left_child_index{ static_cast<uint32_t>(bvh_nodes.size()) };
 
+	// create two nodes => having left_child_index pointing to the first one
+	bvh_nodes.emplace_back();
+	bvh_nodes.emplace_back();
+	// 9. Mark the node internal and recurse into it children.
+	node.left_child = left_child_index;
 
-	const uint32_t right_child{ BuildBVHNode(mid, end, aabbs, centroids) };
-
-	bvh_nodes[node_idx].left_child = left_child;
-
-	// Store the right child in first_tri for internal nodes.
-	bvh_nodes[node_idx].first_tri = right_child;
-
-	return node_idx;
+	// Left node
+	BuildBVHNode(
+		bvh_nodes,
+		bvh_tri_indices,
+		triangle_aabbs,
+		triangle_centroids,
+		left_child_index,
+		start,
+		middle_index
+	);
+	// Right node
+	BuildBVHNode(
+		bvh_nodes,
+		bvh_tri_indices,
+		triangle_aabbs,
+		triangle_centroids,
+		left_child_index + 1,
+		middle_index,
+		end
+	);
 }
-
 //--- AABB ---
 void AABB::ExpandToInclude(const Vector3& point)
 {
