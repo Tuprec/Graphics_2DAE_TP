@@ -345,6 +345,7 @@ namespace gfx
 		}
 
 		void UpdateAABB() override;
+		uint32_t BuildBVHNode(uint32_t begin, uint32_t end, const std::vector<AABB>& aabbs, const std::vector<Vector3>& centroids);
 	};
 }
 
